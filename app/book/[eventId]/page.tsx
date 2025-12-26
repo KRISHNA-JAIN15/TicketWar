@@ -8,8 +8,8 @@ import StadiumMap from '@/components/StadiumMap';
 import BookingPanel from '@/components/BookingPanel';
 import TicketConfirmation from '@/components/TicketConfirmation';
 
-// Mock event data
-const EVENT_DATA = {
+// Fallback mock event data
+const FALLBACK_EVENT_DATA: Record<string, EventInfo> = {
   'taylor-swift-eras': {
     id: 'taylor-swift-eras',
     name: 'Taylor Swift - The Eras Tour',
@@ -29,6 +29,16 @@ const EVENT_DATA = {
     image: '/events/coldplay.jpg',
   },
 };
+
+interface EventInfo {
+  id: string;
+  name: string;
+  artist: string;
+  venue: string;
+  date: string;
+  time: string;
+  image?: string;
+}
 
 interface TicketData {
   ticketId: string;
@@ -61,15 +71,42 @@ export default function BookingPage() {
   const [lockExpiry, setLockExpiry] = useState<number | null>(null);
   const [isLocking, setIsLocking] = useState(false);
   const [confirmedTicket, setConfirmedTicket] = useState<TicketData | null>(null);
+  const [event, setEvent] = useState<EventInfo>(
+    FALLBACK_EVENT_DATA[eventId] || {
+      id: eventId,
+      name: 'Live Concert Event',
+      artist: 'Various Artists',
+      venue: 'Main Arena',
+      date: 'TBD',
+      time: 'TBD',
+    }
+  );
 
-  const event = EVENT_DATA[eventId as keyof typeof EVENT_DATA] || {
-    id: eventId,
-    name: 'Live Concert Event',
-    artist: 'Various Artists',
-    venue: 'Main Arena',
-    date: 'TBD',
-    time: 'TBD',
-  };
+  // Fetch event details from MongoDB
+  useEffect(() => {
+    const fetchEvent = async () => {
+      try {
+        const response = await fetch(`/api/events/${eventId}`);
+        const data = await response.json();
+        if (data.success && data.event) {
+          setEvent({
+            id: data.event.id,
+            name: data.event.name,
+            artist: data.event.artist,
+            venue: data.event.venue,
+            date: data.event.date,
+            time: data.event.time,
+            image: data.event.image,
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching event:', error);
+        // Keep fallback event data
+      }
+    };
+
+    fetchEvent();
+  }, [eventId]);
 
   const handleSeatSelect = async (seatId: string, price: number) => {
     if (isLocking) return;
@@ -230,6 +267,9 @@ export default function BookingPage() {
               <BookingPanel
                 eventId={eventId}
                 eventName={event.name}
+                eventVenue={event.venue}
+                eventDate={event.date}
+                eventTime={event.time}
                 userId={userId}
                 selectedSeat={selectedSeat}
                 seatPrice={seatPrice}

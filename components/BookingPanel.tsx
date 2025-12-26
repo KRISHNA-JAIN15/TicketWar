@@ -1,11 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import BookingTimer from './BookingTimer';
 
 interface BookingPanelProps {
   eventId: string;
   eventName: string;
+  eventVenue?: string;
+  eventDate?: string;
+  eventTime?: string;
   userId: string;
   selectedSeat: string | null;
   seatPrice: number;
@@ -17,6 +22,9 @@ interface BookingPanelProps {
 export default function BookingPanel({
   eventId,
   eventName,
+  eventVenue,
+  eventDate,
+  eventTime,
   userId,
   selectedSeat,
   seatPrice,
@@ -24,6 +32,7 @@ export default function BookingPanel({
   onRelease,
   onPaymentSuccess,
 }: BookingPanelProps) {
+  const { data: session, status } = useSession();
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentStep, setPaymentStep] = useState<'details' | 'payment'>('details');
   const [cardInfo, setCardInfo] = useState({
@@ -58,9 +67,16 @@ export default function BookingPanel({
   const handlePayment = async () => {
     if (!selectedSeat) return;
 
+    // Check if user is logged in
+    if (!session) {
+      alert('Please sign in to purchase tickets');
+      return;
+    }
+
     setIsProcessing(true);
     try {
-      const response = await fetch('/api/payment', {
+      // First, call the original payment API to process with Redis
+      const paymentResponse = await fetch('/api/payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -71,11 +87,43 @@ export default function BookingPanel({
         }),
       });
 
-      const data = await response.json();
-      if (data.success) {
-        onPaymentSuccess(data.data);
+      const paymentData = await paymentResponse.json();
+      if (!paymentData.success) {
+        alert(paymentData.error || 'Payment failed');
+        return;
+      }
+
+      // Then, create the ticket in MongoDB
+      const seatParts = selectedSeat.split('-');
+      const ticketResponse = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId,
+          eventSlug: eventId,
+          seatId: selectedSeat,
+          section: seatParts[0],
+          row: seatParts[1],
+          seatNumber: parseInt(seatParts[2]),
+          price: seatPrice,
+          paymentId: paymentData.data.paymentId,
+          eventName,
+          eventVenue: eventVenue || 'Main Arena',
+          eventDate: eventDate || 'TBD',
+          eventTime: eventTime || 'TBD',
+        }),
+      });
+
+      const ticketData = await ticketResponse.json();
+      if (ticketData.success) {
+        onPaymentSuccess({
+          ...paymentData.data,
+          ticketId: ticketData.ticket.ticketId,
+        });
       } else {
-        alert(data.error || 'Payment failed');
+        // Payment succeeded but ticket creation failed - still show success
+        // The ticket exists in Redis, just not in MongoDB
+        onPaymentSuccess(paymentData.data);
       }
     } catch (error) {
       console.error('Error processing payment:', error);
@@ -221,38 +269,62 @@ export default function BookingPanel({
 
       {/* Actions */}
       <div className="p-6 space-y-3">
-        {paymentStep === 'details' ? (
-          <button
-            onClick={() => setPaymentStep('payment')}
-            className="w-full py-3 bg-[#ff5733] text-white font-semibold rounded hover:bg-[#e64a2e] transition-colors btn-primary"
-          >
-            Continue to Payment
-          </button>
+        {status === 'loading' ? (
+          <div className="py-3 bg-gray-100 text-gray-500 font-medium rounded text-center">
+            Loading...
+          </div>
+        ) : !session ? (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500 text-center">Sign in to complete your purchase</p>
+            <Link
+              href={`/auth/signin?callbackUrl=/book/${eventId}`}
+              className="block w-full py-3 bg-[#ff5733] text-white font-semibold rounded hover:bg-[#e64a2e] transition-colors text-center"
+            >
+              Sign In to Purchase
+            </Link>
+            <Link
+              href={`/auth/signup?callbackUrl=/book/${eventId}`}
+              className="block w-full py-3 border border-gray-300 text-gray-700 font-medium rounded hover:bg-gray-50 transition-colors text-center"
+            >
+              Create Account
+            </Link>
+          </div>
         ) : (
-          <button
-            onClick={handlePayment}
-            disabled={isProcessing}
-            className="w-full py-3 bg-[#ff5733] text-white font-semibold rounded hover:bg-[#e64a2e] transition-colors btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isProcessing ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Processing...
-              </span>
+          <>
+            {paymentStep === 'details' ? (
+              <button
+                onClick={() => setPaymentStep('payment')}
+                className="w-full py-3 bg-[#ff5733] text-white font-semibold rounded hover:bg-[#e64a2e] transition-colors btn-primary"
+              >
+                Continue to Payment
+              </button>
             ) : (
-              `Pay $${totalPrice}`
+              <button
+                onClick={handlePayment}
+                disabled={isProcessing}
+                className="w-full py-3 bg-[#ff5733] text-white font-semibold rounded hover:bg-[#e64a2e] transition-colors btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isProcessing ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Processing...
+                  </span>
+                ) : (
+                  `Pay $${totalPrice}`
+                )}
+              </button>
             )}
-          </button>
+            <button
+              onClick={handleRelease}
+              className="w-full py-3 border border-gray-300 text-gray-700 font-medium rounded hover:bg-gray-50 transition-colors"
+            >
+              Release Seat
+            </button>
+          </>
         )}
-        <button
-          onClick={handleRelease}
-          className="w-full py-3 border border-gray-300 text-gray-700 font-medium rounded hover:bg-gray-50 transition-colors"
-        >
-          Release Seat
-        </button>
       </div>
     </div>
   );

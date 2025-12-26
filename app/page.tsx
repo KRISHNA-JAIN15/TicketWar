@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 
-// Mock events data
-const EVENTS = [
+// Fallback mock events data
+const FALLBACK_EVENTS = [
   {
     id: 'taylor-swift-eras',
     name: 'Taylor Swift - The Eras Tour',
@@ -55,11 +56,47 @@ const EVENTS = [
   },
 ];
 
+interface EventData {
+  id: string;
+  slug?: string;
+  name: string;
+  artist: string;
+  venue: string;
+  date: string;
+  time: string;
+  image: string;
+  color: string;
+  seatsLeft: number;
+  priceFrom: number;
+}
+
 const TRUSTED_BRANDS = [
   'Live Nation', 'Ticketmaster', 'AXS', 'SeatGeek', 'StubHub', 'Eventbrite'
 ];
 
 export default function Home() {
+  const [events, setEvents] = useState<EventData[]>(FALLBACK_EVENTS);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const response = await fetch('/api/events');
+        const data = await response.json();
+        if (data.success && data.events.length > 0) {
+          setEvents(data.events);
+        }
+      } catch (error) {
+        console.error('Error fetching events:', error);
+        // Keep fallback events on error
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchEvents();
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#f5f3ef]">
       <Navbar />
@@ -227,10 +264,16 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {EVENTS.map((event) => (
+            {isLoading ? (
+              // Loading skeletons
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="rounded-xl overflow-hidden bg-gray-200 animate-pulse h-64" />
+              ))
+            ) : (
+              events.slice(0, 4).map((event) => (
               <Link
                 key={event.id}
-                href={`/book/${event.id}`}
+                href={`/book/${event.slug || event.id}`}
                 className="group relative rounded-xl overflow-hidden feature-card"
                 style={{ backgroundColor: event.color }}
               >
@@ -275,7 +318,8 @@ export default function Home() {
                   </div>
                 </div>
               </Link>
-            ))}
+            ))
+            )}
           </div>
         </div>
       </section>
