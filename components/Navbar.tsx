@@ -25,7 +25,7 @@ export default function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-8">
-            <Link href="/" className="text-[#1a1a1a] hover:text-[#ff5733] transition-colors font-medium">
+            <Link href="/events" className="text-[#1a1a1a] hover:text-[#ff5733] transition-colors font-medium">
               Events
             </Link>
             {session && (

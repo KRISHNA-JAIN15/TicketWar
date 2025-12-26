@@ -40,6 +40,13 @@ const eventSchema = new Schema({
     required: true,
     trim: true,
   },
+  slug: {
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true,
+    trim: true,
+  },
   artist: {
     type: String,
     required: true,
@@ -108,13 +115,11 @@ const ticketSchema = new Schema({
     unique: true,
   },
   userId: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
+    type: String,
     required: true,
   },
   eventId: {
-    type: Schema.Types.ObjectId,
-    ref: 'Event',
+    type: String,
     required: true,
   },
   eventSlug: {
@@ -182,12 +187,19 @@ const ticketSchema = new Schema({
 
 // Create indexes
 eventSchema.index({ isActive: 1, date: 1 });
+eventSchema.index({ slug: 1 });
 ticketSchema.index({ userId: 1, purchasedAt: -1 });
 ticketSchema.index({ eventId: 1 });
+ticketSchema.index({ eventSlug: 1, seatId: 1 });
+
+// Delete cached models if they exist (to allow schema updates during development)
+if (models.Ticket) {
+  delete models.Ticket;
+}
 
 export const User = models.User || model('User', userSchema);
 export const Event = models.Event || model('Event', eventSchema);
-export const Ticket = models.Ticket || model('Ticket', ticketSchema);
+export const Ticket = model('Ticket', ticketSchema);
 
 export type IUser = mongoose.InferSchemaType<typeof userSchema> & { _id: mongoose.Types.ObjectId };
 export type IEvent = mongoose.InferSchemaType<typeof eventSchema> & { _id: mongoose.Types.ObjectId };

@@ -89,11 +89,14 @@ export async function POST(request: NextRequest) {
     const totalPaid = price + serviceFee;
     const ticketId = uuidv4();
 
+    // Use eventSlug as the eventId if provided, otherwise use eventId
+    const finalEventId = eventSlug || eventId;
+
     const ticket = await Ticket.create({
       ticketId,
       userId: session.user.id,
-      eventId,
-      eventSlug,
+      eventId: finalEventId,
+      eventSlug: eventSlug || eventId,
       eventName: eventName || "Concert Event",
       eventVenue: eventVenue || "Main Arena",
       eventDate: eventDate || "TBD",
@@ -109,12 +112,15 @@ export async function POST(request: NextRequest) {
       status: "confirmed",
     });
 
-    // Update seats left in event (if it's a MongoDB event)
-    try {
-      await Event.findByIdAndUpdate(eventId, { $inc: { seatsLeft: -1 } });
-    } catch {
-      // Event might not exist in MongoDB (mock events)
-    }
+    // Update seats left in event (find by slug)
+    const updateResult = await Event.findOneAndUpdate(
+      { slug: eventSlug || eventId },
+      { $inc: { seatsLeft: -1 } },
+      { new: true }
+    );
+    
+    console.log("Ticket created successfully:", ticket.ticketId);
+    console.log("Event seats updated:", updateResult?.slug, "seatsLeft:", updateResult?.seatsLeft);
 
     return NextResponse.json({
       success: true,

@@ -242,7 +242,7 @@ export default function AdminPage() {
                             )}
                           </button>
                           <Link
-                            href={`/book/${event.id}`}
+                            href={`/book/${event.slug || event.id}`}
                             className="p-2 text-gray-500 hover:text-blue-500 transition-colors"
                             title="View Booking Page"
                           >

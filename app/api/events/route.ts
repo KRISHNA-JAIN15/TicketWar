@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       success: true,
       events: events.map((event) => ({
         id: event._id.toString(),
-        slug: event._id.toString(),
+        slug: event.slug || event._id.toString(),
         name: event.name,
         artist: event.artist,
         venue: event.venue,
@@ -74,8 +74,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Generate slug from name
+    const slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+
+    // Check if slug already exists and make it unique
+    let finalSlug = slug;
+    let counter = 1;
+    while (await Event.findOne({ slug: finalSlug })) {
+      finalSlug = `${slug}-${counter}`;
+      counter++;
+    }
+
     const event = await Event.create({
       name,
+      slug: finalSlug,
       artist,
       venue,
       date,

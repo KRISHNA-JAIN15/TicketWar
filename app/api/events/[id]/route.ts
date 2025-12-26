@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Event } from "@/lib/models";
 import { auth } from "@/lib/auth";
 
-// GET - Get single event
+// GET - Get single event by ID or slug
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -12,7 +13,11 @@ export async function GET(
     await connectToDatabase();
     const { id } = await params;
 
-    const event = await Event.findById(id).lean();
+    // Check if id is a valid MongoDB ObjectId or a slug
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    const query = isValidObjectId ? { _id: id } : { slug: id };
+    
+    const event = await Event.findOne(query).lean();
 
     if (!event) {
       return NextResponse.json(
@@ -25,7 +30,7 @@ export async function GET(
       success: true,
       event: {
         id: event._id.toString(),
-        slug: event._id.toString(),
+        slug: event.slug || event._id.toString(),
         name: event.name,
         artist: event.artist,
         venue: event.venue,
