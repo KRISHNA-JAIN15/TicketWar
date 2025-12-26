@@ -38,4 +38,7 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# Old AWS infra files
+/infra/
 next-env.d.ts

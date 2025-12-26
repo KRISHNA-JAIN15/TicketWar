@@ -1,42 +1,68 @@
 import { Kafka, Producer, Consumer, EachMessagePayload } from 'kafkajs';
 
-// Kafka configuration for AWS EC2
-const KAFKA_BROKERS = process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'];
+// Check if Kafka is enabled
+const KAFKA_ENABLED = process.env.KAFKA_ENABLED === 'true';
+
+// Kafka configuration for Docker
+const KAFKA_BROKERS = process.env.KAFKA_BROKERS?.split(',') || ['localhost:9094'];
 const KAFKA_CLIENT_ID = 'ticketwar-client';
 
 let kafka: Kafka | null = null;
 let producer: Producer | null = null;
+let isConnecting = false;
 
-export function getKafkaClient(): Kafka {
+// Mock mode logging
+function logMock(action: string, data?: unknown) {
+  if (!KAFKA_ENABLED) {
+    console.log(`[Kafka Mock] ${action}`, data ? JSON.stringify(data).slice(0, 100) : '');
+  }
+}
+
+export function getKafkaClient(): Kafka | null {
+  if (!KAFKA_ENABLED) {
+    logMock('Kafka disabled, returning null client');
+    return null;
+  }
+
   if (!kafka) {
     kafka = new Kafka({
       clientId: KAFKA_CLIENT_ID,
       brokers: KAFKA_BROKERS,
       ssl: process.env.KAFKA_SSL === 'true',
-      sasl: process.env.KAFKA_SASL_USERNAME ? {
-        mechanism: 'plain',
-        username: process.env.KAFKA_SASL_USERNAME,
-        password: process.env.KAFKA_SASL_PASSWORD || '',
-      } : undefined,
       connectionTimeout: 10000,
       retry: {
-        initialRetryTime: 100,
-        retries: 8,
+        initialRetryTime: 300,
+        retries: 5,
       },
     });
   }
   return kafka;
 }
 
-export async function getProducer(): Promise<Producer> {
-  if (!producer) {
-    const client = getKafkaClient();
-    producer = client.producer({
-      allowAutoTopicCreation: true,
-      transactionTimeout: 30000,
-    });
-    await producer.connect();
-    console.log('Kafka producer connected');
+export async function getProducer(): Promise<Producer | null> {
+  if (!KAFKA_ENABLED) {
+    logMock('Kafka disabled, returning null producer');
+    return null;
+  }
+
+  if (!producer && !isConnecting) {
+    isConnecting = true;
+    try {
+      const client = getKafkaClient();
+      if (!client) return null;
+
+      producer = client.producer({
+        allowAutoTopicCreation: true,
+        transactionTimeout: 30000,
+      });
+      await producer.connect();
+      console.log('✓ Kafka producer connected to', KAFKA_BROKERS.join(', '));
+    } catch (error) {
+      console.error('✗ Kafka producer connection failed:', error);
+      producer = null;
+    } finally {
+      isConnecting = false;
+    }
   }
   return producer;
 }
@@ -89,8 +115,15 @@ export interface PaymentProcessedEvent {
 
 // Publish functions
 export async function publishTicketSold(event: TicketSoldEvent): Promise<void> {
+  if (!KAFKA_ENABLED) {
+    logMock('publishTicketSold', event);
+    return;
+  }
+
   try {
     const prod = await getProducer();
+    if (!prod) return;
+
     await prod.send({
       topic: TOPICS.TICKET_SOLD,
       messages: [
@@ -104,14 +137,19 @@ export async function publishTicketSold(event: TicketSoldEvent): Promise<void> {
     console.log('Published ticket_sold event:', event.seatId);
   } catch (error) {
     console.error('Failed to publish ticket_sold event:', error);
-    // In production, you'd want to implement retry logic or dead letter queue
-    throw error;
   }
 }
 
 export async function publishSeatLocked(event: SeatLockedEvent): Promise<void> {
+  if (!KAFKA_ENABLED) {
+    logMock('publishSeatLocked', event);
+    return;
+  }
+
   try {
     const prod = await getProducer();
+    if (!prod) return;
+
     await prod.send({
       topic: TOPICS.SEAT_LOCKED,
       messages: [
@@ -129,8 +167,15 @@ export async function publishSeatLocked(event: SeatLockedEvent): Promise<void> {
 }
 
 export async function publishSeatReleased(event: SeatReleasedEvent): Promise<void> {
+  if (!KAFKA_ENABLED) {
+    logMock('publishSeatReleased', event);
+    return;
+  }
+
   try {
     const prod = await getProducer();
+    if (!prod) return;
+
     await prod.send({
       topic: TOPICS.SEAT_RELEASED,
       messages: [
@@ -148,8 +193,15 @@ export async function publishSeatReleased(event: SeatReleasedEvent): Promise<voi
 }
 
 export async function publishPaymentProcessed(event: PaymentProcessedEvent): Promise<void> {
+  if (!KAFKA_ENABLED) {
+    logMock('publishPaymentProcessed', event);
+    return;
+  }
+
   try {
     const prod = await getProducer();
+    if (!prod) return;
+
     await prod.send({
       topic: TOPICS.PAYMENT_PROCESSED,
       messages: [
@@ -167,8 +219,14 @@ export async function publishPaymentProcessed(event: PaymentProcessedEvent): Pro
 }
 
 // Consumer creation helper
-export function createConsumer(groupId: string): Consumer {
+export function createConsumer(groupId: string): Consumer | null {
+  if (!KAFKA_ENABLED) {
+    logMock('createConsumer', { groupId });
+    return null;
+  }
+
   const client = getKafkaClient();
+  if (!client) return null;
   return client.consumer({ groupId });
 }
 
@@ -180,9 +238,15 @@ export async function startConsumer<T>(
   topic: string,
   groupId: string,
   handler: MessageHandler<T>
-): Promise<Consumer> {
+): Promise<Consumer | null> {
+  if (!KAFKA_ENABLED) {
+    logMock('startConsumer', { topic, groupId });
+    return null;
+  }
+
   const consumer = createConsumer(groupId);
-  
+  if (!consumer) return null;
+
   await consumer.connect();
   await consumer.subscribe({ topic, fromBeginning: false });
 
